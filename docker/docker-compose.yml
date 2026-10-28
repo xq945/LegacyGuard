@@ -133,6 +133,29 @@ services:
     networks:
       - lg-net
 
+  # ==================== 前端 ====================
+  # 静态文件由 nginx 托管，并把 /api 反向代理到后端 ——
+  # 前后端同源，生产环境不需要处理跨域。
+  frontend:
+    profiles: ["app"]
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: lg-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-8081}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - lg-net
+
 networks:
   lg-net:
     driver: bridge
