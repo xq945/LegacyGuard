@@ -11,6 +11,8 @@ import com.legacyguard.module.contact.dto.ContactResponse;
 import com.legacyguard.module.contact.dto.ContactView;
 import com.legacyguard.module.contact.dto.InviteContactRequest;
 import com.legacyguard.module.contact.mapper.TrustedContactMapper;
+import com.legacyguard.module.notification.domain.NotificationType;
+import com.legacyguard.module.notification.service.NotificationService;
 import com.legacyguard.module.user.domain.SysUser;
 import com.legacyguard.module.user.mapper.SysUserMapper;
 import com.legacyguard.security.AuthPrincipal;
@@ -39,13 +41,16 @@ public class ContactService {
     private final TrustedContactMapper contactMapper;
     private final SysUserMapper userMapper;
     private final AuditService auditService;
+    private final NotificationService notificationService;
 
     public ContactService(TrustedContactMapper contactMapper,
                           SysUserMapper userMapper,
-                          AuditService auditService) {
+                          AuditService auditService,
+                          NotificationService notificationService) {
         this.contactMapper = contactMapper;
         this.userMapper = userMapper;
         this.auditService = auditService;
+        this.notificationService = notificationService;
     }
 
     // ==================================================================
@@ -104,6 +109,12 @@ public class ContactService {
 
         log.info("发出联系人邀请 ownerId={} contactUserId={}", actor.userId(), target.getId());
 
+        // 通知失败不能影响邀请本身：邀请已经写进库了，通知只是提醒手段
+        safeNotify(target.getId(), NotificationType.CONTACT_INVITED, relation.getId(),
+                "收到可信联系人邀请",
+                "有用户邀请你成为其可信联系人。确认后，在你失联的情况下对方可能申请访问其托管的资料。",
+                "contact:invite:" + relation.getId());
+
         // 邀请成功后立即回读，保证返回的字段与其他接口一致
         return listRelated(actor.userId()).stream()
                 .filter(v -> v.getId().equals(relation.getId()))
@@ -148,6 +159,11 @@ public class ContactService {
         auditService.success(actor.userId(), actor.role(), AuditAction.CONTACT_ACCEPT,
                 "CONTACT", contactId, Map.of("ownerId", relation.getOwnerId()));
         log.info("联系人关系生效 contactId={} contactUserId={}", contactId, actor.userId());
+
+        safeNotify(relation.getOwnerId(), NotificationType.CONTACT_ACTIVATED, contactId,
+                "可信联系人已确认",
+                "对方已接受你的邀请，关系正式生效。请记得按时完成状态确认。",
+                "contact:accept:" + contactId);
     }
 
     /**
@@ -219,5 +235,25 @@ public class ContactService {
                 "CONTACT", contactId, detail);
 
         log.info("联系人关系已撤销 contactId={} ownerId={}", contactId, actor.userId());
+    }
+
+    // ==================================================================
+    // 内部
+    // ==================================================================
+
+    /**
+     * 发送通知，失败只记日志。
+     *
+     * <p>通知是辅助手段，不是业务前提。邀请已经写入数据库了，
+     * 因为一条站内信写失败就把整个邀请回滚，反而让用户困惑。
+     * 第四阶段改用事务发件箱后，这里会交给 MQ 投递，语义不变。
+     */
+    private void safeNotify(Long receiverId, String type, Long bizId,
+                            String title, String content, String dedupKey) {
+        try {
+            notificationService.send(receiverId, type, bizId, title, content, dedupKey);
+        } catch (RuntimeException e) {
+            log.error("站内信发送失败 receiver={} type={}", receiverId, type, e);
+        }
     }
 }

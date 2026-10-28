@@ -1,10 +1,15 @@
 package com.legacyguard.module.audit.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.legacyguard.common.api.PageResult;
 import com.legacyguard.common.web.ClientIpResolver;
 import com.legacyguard.common.web.RequestContext;
 import com.legacyguard.module.audit.domain.AuditLog;
+import com.legacyguard.module.audit.dto.AuditLogView;
 import com.legacyguard.module.audit.mapper.AuditLogMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -13,6 +18,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -99,6 +106,38 @@ public class AuditService {
      */
     private String currentClientIp() {
         return clientIpResolver.resolve(currentRequest());
+    }
+
+    // ==================================================================
+    // 查询
+    // ==================================================================
+
+    /**
+     * 查询审计记录。
+     *
+     * <p><b>{@code actorId} 由调用方强制注入，不能来自请求参数</b> ——
+     * 普通用户只能看自己的记录，管理员可以按条件查全部。
+     * 如果允许客户端传 {@code actorId}，任何人都能翻别人的操作历史。
+     *
+     * <p>所有参数都走条件构造器，不存在字符串拼接。
+     */
+    public PageResult<AuditLogView> query(Long actorId, String action, String objectType,
+                                          Long objectId, LocalDateTime from, LocalDateTime to,
+                                          long page, long size) {
+
+        LambdaQueryWrapper<AuditLog> query = new LambdaQueryWrapper<AuditLog>()
+                .eq(actorId != null, AuditLog::getActorId, actorId)
+                .eq(action != null && !action.isBlank(), AuditLog::getAction, action)
+                .eq(objectType != null && !objectType.isBlank(), AuditLog::getObjectType, objectType)
+                .eq(objectId != null, AuditLog::getObjectId, objectId)
+                .ge(from != null, AuditLog::getCreatedAt, from)
+                .le(to != null, AuditLog::getCreatedAt, to)
+                .orderByDesc(AuditLog::getId);
+
+        IPage<AuditLog> result = auditLogMapper.selectPage(new Page<>(page, size), query);
+
+        List<AuditLogView> records = result.getRecords().stream().map(AuditLogView::from).toList();
+        return PageResult.of(records, result.getTotal(), page, size);
     }
 
     private String currentUserAgent() {
