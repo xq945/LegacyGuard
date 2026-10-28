@@ -11,6 +11,9 @@ import java.time.LocalDateTime;
 @Schema(description = "状态确认情况")
 public record HeartbeatStatusResponse(
 
+        @Schema(description = "用户 ID。管理端核验队列必须靠它来定位用户")
+        Long userId,
+
         @Schema(description = "ACTIVE / REMINDING / VERIFYING / REVIEWING / SUSPENDED")
         String status,
 
@@ -45,6 +48,7 @@ public record HeartbeatStatusResponse(
                 : java.time.Duration.between(now, config.getNextDeadlineAt()).toDays();
 
         return new HeartbeatStatusResponse(
+                config.getUserId(),
                 config.getStatus(),
                 config.getCycleNo(),
                 config.getCycleDays(),
