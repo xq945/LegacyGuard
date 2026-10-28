@@ -114,6 +114,14 @@ legacyguard:
     max-per-user: 100
     # 单个资产内容的字节上限（UTF-8 编码后）
     max-content-bytes: 65536
+  heartbeat:
+    # 新用户的默认确认周期（天）
+    default-cycle-days: 90
+    min-cycle-days: 7
+    max-cycle-days: 365
+    default-reminder-rounds: 3
+    max-reminder-rounds: 10
+    default-reminder-interval-hours: 72
 
 # ==================== 接口文档 ====================
 springdoc:
