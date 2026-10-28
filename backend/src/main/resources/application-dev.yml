@@ -1,0 +1,26 @@
+# 本地开发配置
+#
+# ⚠️ 本文件中的 JWT 密钥仅用于本地开发，已在仓库中公开，任何人可见。
+#    生产环境必须通过环境变量 LG_JWT_SECRET 覆盖，否则等同于没有认证。
+#    生成新密钥：openssl rand -base64 32
+
+legacyguard:
+  jwt:
+    secret: ${LG_JWT_SECRET:MAMcroH6R8OaLE7Rl72GO3qH9NNb+2y8ffEzNJtWg+E=}
+
+management:
+  endpoint:
+    health:
+      show-details: always
+
+mybatis-plus:
+  configuration:
+    # 开发期打印 SQL，便于理解 MyBatis-Plus 实际生成了什么（尤其乐观锁与条件更新）
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+logging:
+  level:
+    com.legacyguard: DEBUG
+    org.springframework.security: INFO
+    # 想看 RabbitMQ 的连接细节时打开
+    org.springframework.amqp: INFO

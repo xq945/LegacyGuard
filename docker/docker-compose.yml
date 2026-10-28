@@ -1,0 +1,146 @@
+# LegacyGuard 开发环境
+#
+# 用法：
+#   1. 复制 .env.example 为 .env 并填写密码与 JWT 密钥
+#   2. 只启动中间件（后端用 IDE / mvn 跑，便于调试）：
+#        docker compose up -d
+#   3. 全容器启动（含后端）：
+#        docker compose --profile app up -d --build
+#
+# ⚠️ 数据持久化在命名卷 lg-mysql-data 中。
+#    `docker compose down -v` 会连同数据一起删除，且加密资产的密文一旦丢失
+#    即便有 KEK 也无法恢复，请勿在日常开发中使用 -v。
+
+name: legacyguard
+
+services:
+  # ==================== MySQL ====================
+  mysql:
+    image: mysql:8.0
+    container_name: lg-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?必须设置 MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME:-legacy_guard}
+      MYSQL_USER: ${DB_USER:-legacyguard}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?必须设置 DB_PASSWORD}
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-authentication-plugin=caching_sha2_password
+      - --max-connections=200
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # 容器首次初始化时自动执行 sql 目录下的脚本（仅首次，之后不再执行）
+      - ../sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    networks:
+      - lg-net
+
+  # ==================== Redis ====================
+  redis:
+    image: redis:7
+    container_name: lg-redis
+    restart: unless-stopped
+    # 开发环境不设密码，简化本地调试；生产必须启用 requirepass
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks:
+      - lg-net
+
+  # ==================== RabbitMQ ====================
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: lg-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-legacyguard}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?必须设置 RABBITMQ_PASSWORD}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
+      TZ: Asia/Shanghai
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      # 管理台：http://localhost:15672
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+    networks:
+      - lg-net
+
+  # ==================== 后端 ====================
+  # 默认不启动（profile: app）。本地开发推荐用 IDE 跑后端，改代码即生效。
+  backend:
+    profiles: ["app"]
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: lg-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-legacy_guard}
+      DB_USER: ${DB_USER:-legacyguard}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-legacyguard}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      # 密钥通过环境变量注入，绝不写进镜像层
+      LG_JWT_SECRET: ${LG_JWT_SECRET:?必须设置 LG_JWT_SECRET，生成方式 openssl rand -base64 32}
+      LG_CORS_ORIGINS: ${LG_CORS_ORIGINS:-http://localhost:5173}
+      TZ: Asia/Shanghai
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    networks:
+      - lg-net
+
+networks:
+  lg-net:
+    driver: bridge
+
+volumes:
+  mysql-data:
+    name: lg-mysql-data
+  redis-data:
+    name: lg-redis-data
+  rabbitmq-data:
+    name: lg-rabbitmq-data

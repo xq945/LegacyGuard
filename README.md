@@ -13,8 +13,8 @@ LegacyGuard 解决的是纯工程问题，不是法律问题：
 | 阶段 | 内容 | 状态 |
 | --- | --- | --- |
 | 一 | 需求、架构、状态机、数据库、API、并发与消息可靠性设计 | ✅ 已完成 |
-| 二 | 后端基础工程 | 待开始 |
-| 三 | 核心业务模块 | 待开始 |
+| 二 | 后端基础工程（Spring Boot + 三大中间件 + Docker Compose） | ✅ 已完成 |
+| 三 | 核心业务模块 | 进行中 |
 | 四 | 中间件与可靠性实现 | 待开始 |
 | 五 | 前端与联调 | 待开始 |
 | 六 | 部署与交付 | 待开始 |
@@ -30,6 +30,8 @@ LegacyGuard 解决的是纯工程问题，不是法律问题：
 | [05-可靠性与并发设计](docs/05-可靠性与并发设计.md) | 事务边界、7 个并发场景、事务发件箱、RabbitMQ、Redis |
 | [06-架构与目录结构](docs/06-架构与目录结构.md) | 技术选型理由、工程结构、加密方案 |
 | [07-待确认事项](docs/07-待确认事项.md) | 需求歧义说明与已确认的 4 项决策 |
+| [08-版本清单](docs/08-版本清单.md) | 实际解析并编译通过的依赖版本 |
+| [09-第二阶段说明](docs/09-第二阶段说明.md) | 后端骨架的设计决策与实测结果 |
 
 数据库结构：[sql/schema.sql](sql/schema.sql)（已在 MySQL 8.0 容器中实测执行通过）
 
@@ -59,9 +61,31 @@ LegacyGuard 解决的是纯工程问题，不是法律问题：
 - KEK 通过环境变量注入，不硬编码、不进镜像、不入仓库
 - 密钥丢失意味着资产永久无法解密，这是刻意设计，不使用后门恢复
 
-## 开发环境
+## 快速开始
 
-Docker 化开发环境将在第二阶段随工程脚手架一并提供。当前仓库仅包含设计文档与建表脚本。
+```bash
+# 1. 启动中间件（MySQL / Redis / RabbitMQ）
+cd docker
+cp .env.example .env          # 填写密码；LG_JWT_SECRET 用 openssl rand -base64 32 生成
+docker compose up -d
+docker compose ps             # 等三个服务 healthy
+
+# 2. 编译并跑测试
+cd ../backend
+mvn test                      # 期望：9 个测试通过
+
+# 3. 启动后端
+mvn spring-boot:run
+```
+
+访问 http://localhost:8080/actuator/health 应为 `UP`，Swagger 在
+http://localhost:8080/swagger-ui.html 。
+
+> ⚠️ 本机 3306 / 6379 若已被占用，`docker/.env` 中的 `MYSQL_PORT` / `REDIS_PORT`
+> 需改成非标准端口，并同步设置后端的 `DB_PORT` / `REDIS_PORT` 环境变量。
+> 漏设会连到本机那台数据库，表现为"表不存在"。
+
+完整的运行、环境变量与验证说明见 [09-第二阶段说明](docs/09-第二阶段说明.md)。
 
 ## 许可
 

@@ -1,0 +1,127 @@
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  error:
+    # 不让 Spring Boot 返回默认的 /error 页面，统一走全局异常处理
+    whitelabel:
+      enabled: false
+
+spring:
+  application:
+    name: legacyguard
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+
+  # ==================== MySQL ====================
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:legacy_guard}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    username: ${DB_USER:legacyguard}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      pool-name: LegacyGuardPool
+      maximum-pool-size: 10
+      minimum-idle: 2
+      # 连接超时要短：数据库不可用时快速失败，而不是把 Tomcat 线程耗光
+      connection-timeout: 3000
+      max-lifetime: 1800000
+      idle-timeout: 600000
+
+  # ==================== Redis ====================
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 4
+          min-idle: 1
+
+  # ==================== RabbitMQ ====================
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    connection-timeout: 5s
+    # 发布确认：Broker 是否收到消息
+    publisher-confirm-type: correlated
+    # 路由失败回调：消息收到了但没有队列接收
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        # 手动 ack —— 处理成功才确认，失败时不重投（进死信），避免死循环
+        acknowledge-mode: manual
+        prefetch: 10
+        default-requeue-rejected: false
+
+  jackson:
+    default-property-inclusion: non_null
+    time-zone: Asia/Shanghai
+    serialization:
+      write-dates-as-timestamps: false
+
+# ==================== MyBatis-Plus ====================
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    # 数据库返回 NULL 的列也会映射到 Map 结果中，便于区分"没有这个字段"与"字段为 null"
+    call-setters-on-nulls: true
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+      # 本项目只用两张表做软删除（sys_user、digital_asset），
+      # 因此不配置全局逻辑删除字段，改为在实体上按需标注 @TableLogic
+
+# ==================== 业务配置 ====================
+legacyguard:
+  jwt:
+    # 必须通过环境变量提供。Base64 编码，解码后至少 32 字节。
+    # 生成：openssl rand -base64 32
+    secret: ${LG_JWT_SECRET:}
+    access-token-ttl: 30m
+    issuer: legacyguard
+  cors:
+    allowed-origins: ${LG_CORS_ORIGINS:http://localhost:5173}
+
+# ==================== 接口文档 ====================
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+
+# ==================== 可观测性 ====================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      # 生产环境不暴露组件明细，仅返回 UP/DOWN
+      show-details: when-authorized
+      roles: ADMIN
+  health:
+    rabbit:
+      enabled: true
+    redis:
+      enabled: true
+    db:
+      enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.legacyguard: INFO
