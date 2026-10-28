@@ -91,14 +91,12 @@ services:
 
   # ==================== 后端 ====================
   # 默认不启动（profile: app）。本地开发推荐用 IDE 跑后端，改代码即生效。
-  #
-  # ⚠️ 注意：本服务的镜像构建尚未在开发环境中验证过（网络无法访问 Docker Hub）。
-  #    首次使用时请留意构建阶段是否顺利。
   backend:
     profiles: ["app"]
     build:
       context: ../backend
       dockerfile: Dockerfile
+    image: legacyguard-backend:local
     container_name: lg-backend
     restart: unless-stopped
     depends_on:
@@ -123,6 +121,10 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       # 密钥通过环境变量注入，绝不写进镜像层
       LG_JWT_SECRET: ${LG_JWT_SECRET:?必须设置 LG_JWT_SECRET，生成方式 openssl rand -base64 32}
+      # 资产加密主密钥。格式 "版本=Base64(32字节)"，多个版本用逗号分隔，用于密钥轮换。
+      # 缺失时后端会直接启动失败 —— 这是刻意的：宁可起不来，也不要拿随机密钥把数据加密成永久打不开的形态。
+      LG_KEK_KEYS: ${LG_KEK_KEYS:?必须设置 LG_KEK_KEYS，格式 1=<openssl rand -base64 32>}
+      LG_KEK_CURRENT_VERSION: ${LG_KEK_CURRENT_VERSION:-1}
       LG_CORS_ORIGINS: ${LG_CORS_ORIGINS:-http://localhost:5173}
       TZ: Asia/Shanghai
     ports:
@@ -144,6 +146,7 @@ services:
     build:
       context: ../frontend
       dockerfile: Dockerfile
+    image: legacyguard-frontend:local
     container_name: lg-frontend
     restart: unless-stopped
     depends_on:
@@ -151,7 +154,7 @@ services:
     ports:
       - "${FRONTEND_PORT:-8081}:80"
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
       interval: 20s
       timeout: 5s
       retries: 5
