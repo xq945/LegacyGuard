@@ -103,6 +103,17 @@ legacyguard:
     # 是否采信 X-Forwarded-For。该头可被客户端伪造，无条件信任会让 IP 限流失效。
     # 只有在请求必经可信反向代理、且代理会覆盖（而非追加）该头时才可开启。
     trust-forwarded-headers: ${LG_TRUST_FORWARDED_HEADERS:false}
+  crypto:
+    # 资产加密主密钥（KEK）。格式 "版本=Base64"，多个版本用逗号分隔，例如 "1=xxx,2=yyy"。
+    # 生成方式：openssl rand -base64 32
+    # 未配置时应用启动失败 —— 宁可起不来，也不要用随机密钥把数据加密成永久无法恢复的形态。
+    keys: ${LG_KEK_KEYS:}
+    # 当前用于加密的密钥版本；解密时按各条记录自己的 kek_version 取对应密钥
+    current-version: ${LG_KEK_CURRENT_VERSION:1}
+  asset:
+    max-per-user: 100
+    # 单个资产内容的字节上限（UTF-8 编码后）
+    max-content-bytes: 65536
 
 # ==================== 接口文档 ====================
 springdoc:

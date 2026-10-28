@@ -11,6 +11,13 @@ legacyguard:
     # 本地开发所有请求都来自 127.0.0.1，标准阈值会让调试很快撞上限流，
     # 这里放宽到 30 次/分钟。生产环境沿用 application.yml 中的 10 次。
     login-rate-limit: 30
+  crypto:
+    # ⚠️ 仅本地开发使用的固定主密钥，已公开在仓库中。
+    #    生产环境必须通过 LG_KEK_KEYS 覆盖，否则等于没有加密。
+    #    该密钥一旦用于真实数据，任何看到本仓库的人都能解密 —— 切记。
+    # 注意引号位置：整段用双引号包住，引号若写进默认值内部，
+    # 解析出来会变成 "1（带引号），版本号就不是数字了
+    keys: "${LG_KEK_KEYS:1=cg3EyAxT7hS4hvP9Mitb02tWY+db//xLeGG90qoDNpA=}"
 
 management:
   endpoint:
