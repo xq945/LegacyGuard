@@ -1,24 +1,38 @@
 package com.legacyguard.security;
 
+import com.legacyguard.module.user.domain.SysUser;
+import com.legacyguard.module.user.domain.UserStatus;
+import com.legacyguard.module.user.mapper.SysUserMapper;
 import org.springframework.stereotype.Component;
 
 /**
- * {@link UserAuthStateResolver} 的当前实现。
+ * 判断用户当前是否仍可用。
  *
- * <p><b>第二阶段的状态</b>：用户表尚未接入，此处一律放行。
- * 这在本阶段是安全的 —— 还没有登录接口，不存在能被合法签发的令牌。
+ * <p>JWT 是无状态的，签名有效只能证明"令牌是真的"，不能证明"这个人现在还能用"。
+ * 用户被禁用、锁定或注销之后，旧令牌必须立即失效 —— 因此每个请求都要问一次这里。
  *
- * <p><b>第三阶段要做的改动</b>：改为查询 {@code sys_user}，判断
- * {@code status = 0}（正常）且 {@code deleted_at IS NULL}。
- * 改动的范围仅限本类，调用方（{@link JwtAuthenticationFilter}）不需要变化 ——
- * 这正是把它抽成接口的原因。
+ * <p>这是<b>认证</b>层面的检查，不是业务授权：它回答"你是不是还能访问系统"，
+ * 不回答"你能不能看这份资产"。后者由各模块的访问守卫查数据库判定。
  */
 @Component
 public class UserAuthStateResolverImpl implements UserAuthStateResolver {
 
+    private final SysUserMapper userMapper;
+
+    public UserAuthStateResolverImpl(SysUserMapper userMapper) {
+        this.userMapper = userMapper;
+    }
+
     @Override
     public boolean isActive(Long userId) {
-        // 第三阶段：return userMapper.selectById(userId) 状态为正常;
-        return true;
+        if (userId == null) {
+            return false;
+        }
+        SysUser user = userMapper.selectById(userId);
+        if (user == null || user.isDeleted()) {
+            return false;
+        }
+        // 锁定状态同样拒绝：锁定中的账号即使持有旧令牌也不应继续操作
+        return UserStatus.isUsable(user.getStatus());
     }
 }

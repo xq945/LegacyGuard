@@ -39,9 +39,16 @@ import java.util.List;
 @EnableMethodSecurity
 public class SecurityConfig {
 
-    /** 无需认证的路径 */
+    /**
+     * 无需认证的路径。
+     *
+     * <p>刻意逐个列出接口而不是用 {@code /api/auth/**} 通配：
+     * 登出接口必须要求认证，如果整个 auth 前缀都放行，
+     * 将来往这个包里新增任何接口都会默认匿名可访问。
+     */
     private static final String[] PUBLIC_PATHS = {
-            "/api/auth/**",
+            "/api/auth/register",
+            "/api/auth/login",
             "/actuator/health/**",
             "/actuator/info",
             "/v3/api-docs/**",

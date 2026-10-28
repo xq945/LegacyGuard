@@ -92,6 +92,17 @@ legacyguard:
     issuer: legacyguard
   cors:
     allowed-origins: ${LG_CORS_ORIGINS:http://localhost:5173}
+  auth:
+    # 连续失败达到该次数后锁定账号
+    max-login-failures: 5
+    lock-duration: 15m
+    # 同一 IP / 同一账号在窗口内允许的登录尝试次数（两个维度同时生效）
+    login-rate-limit: 10
+    login-rate-window: 1m
+  security:
+    # 是否采信 X-Forwarded-For。该头可被客户端伪造，无条件信任会让 IP 限流失效。
+    # 只有在请求必经可信反向代理、且代理会覆盖（而非追加）该头时才可开启。
+    trust-forwarded-headers: ${LG_TRUST_FORWARDED_HEADERS:false}
 
 # ==================== 接口文档 ====================
 springdoc:

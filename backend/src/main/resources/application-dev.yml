@@ -7,6 +7,10 @@
 legacyguard:
   jwt:
     secret: ${LG_JWT_SECRET:MAMcroH6R8OaLE7Rl72GO3qH9NNb+2y8ffEzNJtWg+E=}
+  auth:
+    # 本地开发所有请求都来自 127.0.0.1，标准阈值会让调试很快撞上限流，
+    # 这里放宽到 30 次/分钟。生产环境沿用 application.yml 中的 10 次。
+    login-rate-limit: 30
 
 management:
   endpoint:
