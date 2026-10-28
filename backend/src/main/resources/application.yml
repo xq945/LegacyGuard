@@ -122,6 +122,10 @@ legacyguard:
     default-reminder-rounds: 3
     max-reminder-rounds: 10
     default-reminder-interval-hours: 72
+  authorization:
+    # 审核通过后的等待期（天）：期间所有者可提异议，到期并复核通过才生效
+    wait-period-days: 7
+    max-assets-per-case: 100
 
 # ==================== 接口文档 ====================
 springdoc:
