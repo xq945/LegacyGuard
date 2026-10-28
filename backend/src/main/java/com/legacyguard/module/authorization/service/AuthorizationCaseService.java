@@ -36,8 +36,9 @@ import com.legacyguard.module.heartbeat.domain.HeartbeatConfig;
 import com.legacyguard.module.heartbeat.domain.HeartbeatStatus;
 import com.legacyguard.module.heartbeat.mapper.HeartbeatConfigMapper;
 import com.legacyguard.module.heartbeat.service.HeartbeatRecoveryHook;
+import com.legacyguard.infra.outbox.EventTypes;
+import com.legacyguard.infra.outbox.OutboxService;
 import com.legacyguard.module.notification.domain.NotificationType;
-import com.legacyguard.module.notification.service.NotificationService;
 import com.legacyguard.security.AuthPrincipal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -97,7 +98,7 @@ public class AuthorizationCaseService implements HeartbeatRecoveryHook {
     private final AuditService auditService;
     private final CaseNoGenerator caseNoGenerator;
     private final AuthorizationProperties properties;
-    private final NotificationService notificationService;
+    private final OutboxService outboxService;
 
     public AuthorizationCaseService(AuthorizationCaseMapper caseMapper,
                                     AuthorizationAssetMapper caseAssetMapper,
@@ -109,7 +110,7 @@ public class AuthorizationCaseService implements HeartbeatRecoveryHook {
                                     AuditService auditService,
                                     CaseNoGenerator caseNoGenerator,
                                     AuthorizationProperties properties,
-                                    NotificationService notificationService) {
+                                    OutboxService outboxService) {
         this.caseMapper = caseMapper;
         this.caseAssetMapper = caseAssetMapper;
         this.approvalMapper = approvalMapper;
@@ -120,7 +121,7 @@ public class AuthorizationCaseService implements HeartbeatRecoveryHook {
         this.auditService = auditService;
         this.caseNoGenerator = caseNoGenerator;
         this.properties = properties;
-        this.notificationService = notificationService;
+        this.outboxService = outboxService;
     }
 
     // ==================================================================
@@ -307,7 +308,7 @@ public class AuthorizationCaseService implements HeartbeatRecoveryHook {
                 "CASE", caseId, Map.of("caseNo", entity.getCaseNo()));
         log.info("案件已提交审核 caseNo={}", entity.getCaseNo());
 
-        safeNotify(entity.getOwnerId(), NotificationType.CASE_SUBMITTED, caseId,
+        emitNotify(EventTypes.CASE_SUBMITTED, entity.getOwnerId(), NotificationType.CASE_SUBMITTED, caseId,
                 "有人提交了授权申请",
                 "可信联系人提交了授权申请（案件号 " + entity.getCaseNo() + "）。审核通过后将进入等待期，"
                         + "期间你随时可以提出异议。",
@@ -379,7 +380,7 @@ public class AuthorizationCaseService implements HeartbeatRecoveryHook {
         Long counterpart = entity.getOwnerId().equals(actor.userId())
                 ? applicantUserIdOf(entity)
                 : entity.getOwnerId();
-        safeNotify(counterpart, NotificationType.CASE_DISPUTED, caseId,
+        emitNotify(EventTypes.CASE_DISPUTED, counterpart, NotificationType.CASE_DISPUTED, caseId,
                 "授权案件被提出异议",
                 "案件 " + entity.getCaseNo() + " 在等待期内被提出异议，授权流程已暂停，等待管理员处理。",
                 "case:dispute:" + caseId);
@@ -412,7 +413,7 @@ public class AuthorizationCaseService implements HeartbeatRecoveryHook {
                 "CASE", caseId, Map.of("caseNo", entity.getCaseNo()));
         log.info("授权被撤销 caseNo={} by owner={}", entity.getCaseNo(), actor.userId());
 
-        safeNotify(applicantUserIdOf(entity), NotificationType.CASE_REVOKED, caseId,
+        emitNotify(EventTypes.CASE_REVOKED, applicantUserIdOf(entity), NotificationType.CASE_REVOKED, caseId,
                 "授权已被撤销",
                 "案件 " + entity.getCaseNo() + " 的授权已被所有者撤销，你将无法再访问相关资产。",
                 "case:revoke:" + caseId);
@@ -470,7 +471,7 @@ public class AuthorizationCaseService implements HeartbeatRecoveryHook {
 
         log.info("案件批准通过，进入等待期 caseNo={} endAt={}", entity.getCaseNo(), endAt);
 
-        safeNotify(entity.getOwnerId(), NotificationType.CASE_WAITING_PERIOD, caseId,
+        emitNotify(EventTypes.CASE_WAITING, entity.getOwnerId(), NotificationType.CASE_WAITING_PERIOD, caseId,
                 "授权申请已进入等待期",
                 "案件 " + entity.getCaseNo() + " 已通过审核，进入等待期。若你不同意，请在此期间提出异议。",
                 "case:waiting:" + caseId);
@@ -497,7 +498,7 @@ public class AuthorizationCaseService implements HeartbeatRecoveryHook {
         auditService.success(admin.userId(), admin.role(), AuditAction.CASE_REJECT,
                 "CASE", caseId, Map.of("caseNo", entity.getCaseNo(), "fromStatus", from));
 
-        safeNotify(applicantUserIdOf(entity), NotificationType.CASE_REJECTED, caseId,
+        emitNotify(EventTypes.CASE_REJECTED, applicantUserIdOf(entity), NotificationType.CASE_REJECTED, caseId,
                 "授权申请被驳回",
                 "案件 " + entity.getCaseNo() + " 未通过审核。理由：" + request.comment(),
                 "case:reject:" + caseId);
@@ -658,11 +659,11 @@ public class AuthorizationCaseService implements HeartbeatRecoveryHook {
                 entity.getCaseNo(), entity.getOwnerId(), entity.getContactId());
 
         Long applicantId = applicantUserIdOf(entity);
-        safeNotify(applicantId, NotificationType.CASE_AUTHORIZED, caseId,
+        emitNotify(EventTypes.CASE_AUTHORIZED, applicantId, NotificationType.CASE_AUTHORIZED, caseId,
                 "授权已生效",
                 "案件 " + entity.getCaseNo() + " 已生效，你现在可以查看被授权的资产。",
                 "case:authorized:applicant:" + caseId);
-        safeNotify(entity.getOwnerId(), NotificationType.CASE_AUTHORIZED, caseId,
+        emitNotify(EventTypes.CASE_AUTHORIZED, entity.getOwnerId(), NotificationType.CASE_AUTHORIZED, caseId,
                 "授权已生效",
                 "案件 " + entity.getCaseNo() + " 的等待期已结束，授权已生效。如你希望收回，可随时撤销。",
                 "case:authorized:owner:" + caseId);
@@ -817,21 +818,16 @@ public class AuthorizationCaseService implements HeartbeatRecoveryHook {
     }
 
     /**
-     * 发送通知，失败只记日志。
+     * 把"要发通知"写进事务发件箱。
      *
-     * <p>业务状态已经变更并提交在即，一条站内信写失败不该让整个审批回滚 ——
-     * 需求原话是"通知失败不能直接导致业务状态回滚"。
-     * 第四阶段改用事务发件箱后，这里会交给 MQ 投递，语义不变。
+     * <p>与案件状态变更在同一事务内落库，投递交给发布器。这样"案件生效了但联系人
+     * 永远收不到通知"这种情况不会发生 —— 事件要么和状态一起提交，要么一起回滚。
      */
-    private void safeNotify(Long receiverId, String type, Long bizId,
+    private void emitNotify(String eventType, Long receiverId, String bizType, Long bizId,
                             String title, String content, String dedupKey) {
         if (receiverId == null) {
             return;
         }
-        try {
-            notificationService.send(receiverId, type, bizId, title, content, dedupKey);
-        } catch (RuntimeException e) {
-            log.error("站内信发送失败 receiver={} type={} case={}", receiverId, type, bizId, e);
-        }
+        outboxService.notifyUser(eventType, receiverId, bizType, bizId, title, content, dedupKey);
     }
 }

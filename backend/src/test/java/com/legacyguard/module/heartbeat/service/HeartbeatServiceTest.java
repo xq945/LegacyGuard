@@ -4,6 +4,7 @@ import com.legacyguard.common.api.ErrorCode;
 import com.legacyguard.common.exception.BizException;
 import com.legacyguard.common.exception.StateConflictException;
 import com.legacyguard.common.web.ClientIpResolver;
+import com.legacyguard.infra.outbox.OutboxService;
 import com.legacyguard.module.audit.service.AuditService;
 import com.legacyguard.module.heartbeat.config.HeartbeatProperties;
 import com.legacyguard.module.heartbeat.domain.HeartbeatConfig;
@@ -65,6 +66,8 @@ class HeartbeatServiceTest {
     private ObjectProvider<HeartbeatRecoveryHook> hookProvider;
     @Mock
     private HeartbeatRecoveryHook recoveryHook;
+    @Mock
+    private OutboxService outboxService;
 
     private HeartbeatService service;
     private AuthPrincipal user;
@@ -74,7 +77,7 @@ class HeartbeatServiceTest {
     void setUp() {
         HeartbeatProperties props = new HeartbeatProperties(90, 7, 365, 3, 10, 72);
         service = new HeartbeatService(configMapper, recordMapper, auditService,
-                clientIpResolver, props, hookProvider);
+                clientIpResolver, props, hookProvider, outboxService);
         user = new AuthPrincipal(USER_ID, "user", UserRole.USER, "jti");
         admin = new AuthPrincipal(ADMIN_ID, "admin", UserRole.ADMIN, "jti-a");
 

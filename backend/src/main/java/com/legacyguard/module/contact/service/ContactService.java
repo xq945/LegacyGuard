@@ -10,9 +10,10 @@ import com.legacyguard.module.contact.domain.TrustedContact;
 import com.legacyguard.module.contact.dto.ContactResponse;
 import com.legacyguard.module.contact.dto.ContactView;
 import com.legacyguard.module.contact.dto.InviteContactRequest;
+import com.legacyguard.infra.outbox.EventTypes;
+import com.legacyguard.infra.outbox.OutboxService;
 import com.legacyguard.module.contact.mapper.TrustedContactMapper;
 import com.legacyguard.module.notification.domain.NotificationType;
-import com.legacyguard.module.notification.service.NotificationService;
 import com.legacyguard.module.user.domain.SysUser;
 import com.legacyguard.module.user.mapper.SysUserMapper;
 import com.legacyguard.security.AuthPrincipal;
@@ -41,16 +42,16 @@ public class ContactService {
     private final TrustedContactMapper contactMapper;
     private final SysUserMapper userMapper;
     private final AuditService auditService;
-    private final NotificationService notificationService;
+    private final OutboxService outboxService;
 
     public ContactService(TrustedContactMapper contactMapper,
                           SysUserMapper userMapper,
                           AuditService auditService,
-                          NotificationService notificationService) {
+                          OutboxService outboxService) {
         this.contactMapper = contactMapper;
         this.userMapper = userMapper;
         this.auditService = auditService;
-        this.notificationService = notificationService;
+        this.outboxService = outboxService;
     }
 
     // ==================================================================
@@ -109,8 +110,9 @@ public class ContactService {
 
         log.info("发出联系人邀请 ownerId={} contactUserId={}", actor.userId(), target.getId());
 
-        // 通知失败不能影响邀请本身：邀请已经写进库了，通知只是提醒手段
-        safeNotify(target.getId(), NotificationType.CONTACT_INVITED, relation.getId(),
+        // 事件与业务数据同事务写入发件箱，投递交给发布器
+        emitNotify(EventTypes.CONTACT_INVITED, target.getId(), NotificationType.CONTACT_INVITED,
+                relation.getId(),
                 "收到可信联系人邀请",
                 "有用户邀请你成为其可信联系人。确认后，在你失联的情况下对方可能申请访问其托管的资料。",
                 "contact:invite:" + relation.getId());
@@ -160,7 +162,8 @@ public class ContactService {
                 "CONTACT", contactId, Map.of("ownerId", relation.getOwnerId()));
         log.info("联系人关系生效 contactId={} contactUserId={}", contactId, actor.userId());
 
-        safeNotify(relation.getOwnerId(), NotificationType.CONTACT_ACTIVATED, contactId,
+        emitNotify(EventTypes.CONTACT_ACTIVATED, relation.getOwnerId(),
+                NotificationType.CONTACT_ACTIVATED, contactId,
                 "可信联系人已确认",
                 "对方已接受你的邀请，关系正式生效。请记得按时完成状态确认。",
                 "contact:accept:" + contactId);
@@ -242,18 +245,21 @@ public class ContactService {
     // ==================================================================
 
     /**
-     * 发送通知，失败只记日志。
+     * 把"要发通知"这件事写进事务发件箱。
      *
-     * <p>通知是辅助手段，不是业务前提。邀请已经写入数据库了，
-     * 因为一条站内信写失败就把整个邀请回滚，反而让用户困惑。
-     * 第四阶段改用事务发件箱后，这里会交给 MQ 投递，语义不变。
+     * <p>与业务数据在<b>同一事务</b>内落库：业务成功则事件必在，
+     * 业务回滚则事件也不留。真正的投递由 {@code OutboxPublisher} 完成，
+     * 一条站内信不会因为 MQ 抖动而丢失。
+     *
+     * <p>注意这里<b>不吞异常</b>：事件写不进去说明数据库有问题，整个业务本就该失败，
+     * 静默吞掉反而会留下"关系建好了但永远不会通知到人"的隐患。
+     * 通知<b>投递</b>失败由发布器重试兜底，那是另一回事。
      */
-    private void safeNotify(Long receiverId, String type, Long bizId,
+    private void emitNotify(String eventType, Long receiverId, String bizType, Long bizId,
                             String title, String content, String dedupKey) {
-        try {
-            notificationService.send(receiverId, type, bizId, title, content, dedupKey);
-        } catch (RuntimeException e) {
-            log.error("站内信发送失败 receiver={} type={}", receiverId, type, e);
+        if (receiverId == null) {
+            return;
         }
+        outboxService.notifyUser(eventType, receiverId, bizType, bizId, title, content, dedupKey);
     }
 }

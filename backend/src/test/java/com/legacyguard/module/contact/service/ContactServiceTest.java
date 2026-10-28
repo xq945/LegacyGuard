@@ -10,7 +10,7 @@ import com.legacyguard.module.contact.dto.ContactResponse;
 import com.legacyguard.module.contact.dto.ContactView;
 import com.legacyguard.module.contact.dto.InviteContactRequest;
 import com.legacyguard.module.contact.mapper.TrustedContactMapper;
-import com.legacyguard.module.notification.service.NotificationService;
+import com.legacyguard.infra.outbox.OutboxService;
 import com.legacyguard.module.user.domain.SysUser;
 import com.legacyguard.module.user.domain.UserRole;
 import com.legacyguard.module.user.mapper.SysUserMapper;
@@ -52,7 +52,7 @@ class ContactServiceTest {
     @Mock
     private AuditService auditService;
     @Mock
-    private NotificationService notificationService;
+    private OutboxService outboxService;
 
     private ContactService service;
     private AuthPrincipal owner;
@@ -60,7 +60,7 @@ class ContactServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ContactService(contactMapper, userMapper, auditService, notificationService);
+        service = new ContactService(contactMapper, userMapper, auditService, outboxService);
         owner = new AuthPrincipal(OWNER_ID, "owner", UserRole.USER, "jti-1");
         contact = new AuthPrincipal(CONTACT_ID, "contact", UserRole.USER, "jti-2");
     }

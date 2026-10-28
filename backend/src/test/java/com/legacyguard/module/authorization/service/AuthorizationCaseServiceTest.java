@@ -23,7 +23,7 @@ import com.legacyguard.module.contact.mapper.TrustedContactMapper;
 import com.legacyguard.module.heartbeat.domain.HeartbeatConfig;
 import com.legacyguard.module.heartbeat.domain.HeartbeatStatus;
 import com.legacyguard.module.heartbeat.mapper.HeartbeatConfigMapper;
-import com.legacyguard.module.notification.service.NotificationService;
+import com.legacyguard.infra.outbox.OutboxService;
 import com.legacyguard.module.user.domain.UserRole;
 import com.legacyguard.security.AuthPrincipal;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,7 +75,7 @@ class AuthorizationCaseServiceTest {
     @Mock private HeartbeatConfigMapper heartbeatMapper;
     @Mock private DigitalAssetMapper assetMapper;
     @Mock private AuditService auditService;
-    @Mock private NotificationService notificationService;
+    @Mock private OutboxService outboxService;
 
     private AuthorizationCaseService service;
     private AuthPrincipal owner;
@@ -86,7 +86,7 @@ class AuthorizationCaseServiceTest {
     void setUp() {
         service = new AuthorizationCaseService(caseMapper, caseAssetMapper, approvalMapper,
                 disputeMapper, contactMapper, heartbeatMapper, assetMapper, auditService,
-                new CaseNoGenerator(), new AuthorizationProperties(7, 100), notificationService);
+                new CaseNoGenerator(), new AuthorizationProperties(7, 100), outboxService);
 
         owner = new AuthPrincipal(OWNER_ID, "owner", UserRole.USER, "jti-o");
         applicant = new AuthPrincipal(APPLICANT_ID, "applicant", UserRole.USER, "jti-c");

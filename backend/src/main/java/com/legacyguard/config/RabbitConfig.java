@@ -46,7 +46,17 @@ public class RabbitConfig {
     /** 通知死信队列 */
     public static final String NOTIFY_DLQ = "lg.notify.dlq";
 
-    public static final String ROUTING_NOTIFY = "notify.#";
+    /**
+     * 通知队列的绑定键。
+     *
+     * <p>用 {@code #} 匹配全部事件，而不是 {@code notify.#} —— 事件的路由键是
+     * {@code case.submitted}、{@code contact.invited} 这类"领域.动作"格式，
+     * {@code notify.#} 只匹配以 {@code notify.} 开头的键，会一条也收不到。
+     *
+     * <p>当前只有一个通知队列消费全部事件；将来按领域拆分队列时，
+     * 再改成 {@code case.#}、{@code contact.#} 这类更精确的绑定。
+     */
+    public static final String ROUTING_NOTIFY = "#";
     public static final String ROUTING_DLQ = "dlq.#";
 
     @Bean

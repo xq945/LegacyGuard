@@ -8,6 +8,8 @@ import com.legacyguard.common.api.PageResult;
 import com.legacyguard.common.exception.BizException;
 import com.legacyguard.common.exception.StateConflictException;
 import com.legacyguard.common.web.ClientIpResolver;
+import com.legacyguard.infra.outbox.EventTypes;
+import com.legacyguard.infra.outbox.OutboxService;
 import com.legacyguard.module.audit.domain.AuditAction;
 import com.legacyguard.module.audit.service.AuditService;
 import com.legacyguard.module.heartbeat.config.HeartbeatProperties;
@@ -19,6 +21,7 @@ import com.legacyguard.module.heartbeat.dto.HeartbeatRecordResponse;
 import com.legacyguard.module.heartbeat.dto.HeartbeatStatusResponse;
 import com.legacyguard.module.heartbeat.mapper.HeartbeatConfigMapper;
 import com.legacyguard.module.heartbeat.mapper.HeartbeatRecordMapper;
+import com.legacyguard.module.notification.domain.NotificationType;
 import com.legacyguard.security.AuthPrincipal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,19 +60,22 @@ public class HeartbeatService {
     private final ClientIpResolver clientIpResolver;
     private final HeartbeatProperties properties;
     private final ObjectProvider<HeartbeatRecoveryHook> recoveryHookProvider;
+    private final OutboxService outboxService;
 
     public HeartbeatService(HeartbeatConfigMapper configMapper,
                             HeartbeatRecordMapper recordMapper,
                             AuditService auditService,
                             ClientIpResolver clientIpResolver,
                             HeartbeatProperties properties,
-                            ObjectProvider<HeartbeatRecoveryHook> recoveryHookProvider) {
+                            ObjectProvider<HeartbeatRecoveryHook> recoveryHookProvider,
+                            OutboxService outboxService) {
         this.configMapper = configMapper;
         this.recordMapper = recordMapper;
         this.auditService = auditService;
         this.clientIpResolver = clientIpResolver;
         this.properties = properties;
         this.recoveryHookProvider = recoveryHookProvider;
+        this.outboxService = outboxService;
     }
 
     // ==================================================================
@@ -257,7 +263,7 @@ public class HeartbeatService {
                     advanced++;
                     log.info("状态确认逾期，进入提醒阶段 userId={} cycleNo={}",
                             config.getUserId(), config.getCycleNo());
-                    // 第四阶段：在此处通过事务发件箱发出第 1 轮提醒通知
+                    emitRemind(config, 1);
                 } else {
                     // 影响 0 行说明用户在扫描后被并发确认了，或周期已变 —— 正常跳过
                     log.debug("跳过已失效的到期记录 userId={} cycleNo={}",
@@ -296,6 +302,7 @@ public class HeartbeatService {
                     if (rows > 0) {
                         configMapper.markVerifying(config.getUserId(), config.getCycleNo(), now);
                         processed++;
+                        emitRemind(config, nextCount);
                         log.info("提醒轮次耗尽，转入人工核验 userId={} cycleNo={}",
                                 config.getUserId(), config.getCycleNo());
                     }
@@ -303,6 +310,7 @@ public class HeartbeatService {
                     int rows = configMapper.increaseReminder(config.getUserId(), config.getCycleNo(), now);
                     if (rows > 0) {
                         processed++;
+                        emitRemind(config, nextCount);
                         log.info("发出第 {} 轮提醒 userId={}", nextCount, config.getUserId());
                     }
                 }
@@ -349,6 +357,33 @@ public class HeartbeatService {
         } catch (DuplicateKeyException e) {
             // 并发创建，别人先插入了
             return configMapper.selectById(userId);
+        }
+    }
+
+    /**
+     * 发出提醒事件。
+     *
+     * <p>幂等键带上周期号与轮次：同一周期的同一轮提醒，无论定时任务重跑多少次，
+     * 都只会产生一条站内信。
+     *
+     * <p>吞掉异常的原因：这是批量扫描里的单条处理，一条通知写失败不该让
+     * 后面几十个用户都漏掉提醒。状态推进已经成功提交，通知只是补救手段。
+     */
+    private void emitRemind(HeartbeatConfig config, int round) {
+        try {
+            boolean isLast = round >= config.getReminderRounds();
+            outboxService.notifyUser(
+                    EventTypes.HEARTBEAT_REMIND,
+                    config.getUserId(),
+                    NotificationType.HEARTBEAT_REMIND,
+                    config.getUserId(),
+                    isLast ? "最后一次状态确认提醒" : "请完成状态确认",
+                    "你的状态确认已逾期，这是第 " + round + " 轮提醒（共 "
+                            + config.getReminderRounds() + " 轮）。请尽快登录完成确认。"
+                            + (isLast ? "本轮之后系统将转入人工核验。" : ""),
+                    "heartbeat:" + config.getUserId() + ":" + config.getCycleNo() + ":" + round);
+        } catch (RuntimeException e) {
+            log.error("状态确认提醒事件写入失败 userId={}", config.getUserId(), e);
         }
     }
 
