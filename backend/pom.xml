@@ -176,6 +176,41 @@
                     </annotationProcessorPaths>
                 </configuration>
             </plugin>
+
+            <!--
+              集成测试（*IT）与单元测试（*Test）分开跑：
+                mvn test     → 只跑单元测试，秒级
+                mvn verify   → 先跑单元测试，再起 Testcontainers 跑集成测试
+
+              集成测试要启动 MySQL / Redis / RabbitMQ 三个容器，
+              放在 test 阶段会让每次改动都等上一两分钟，不划算。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <includes>
+                        <include>**/*IT.java</include>
+                    </includes>
+                    <environmentVariables>
+                        <!--
+                          Testcontainers 默认会启动 Ryuk 容器做资源回收，
+                          而 Ryuk 镜像需要从 Docker Hub 拉取。
+                          在无法访问 Docker Hub 的环境中它会卡住两分钟后失败。
+                          关闭后，容器仍会在 JVM 正常退出时由 shutdown hook 清理。
+                        -->
+                        <TESTCONTAINERS_RYUK_DISABLED>true</TESTCONTAINERS_RYUK_DISABLED>
+                    </environmentVariables>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 </project>

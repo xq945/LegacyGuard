@@ -84,7 +84,8 @@ docker compose ps             # 等三个服务 healthy
 
 # 2. 编译并跑测试
 cd ../backend
-mvn test                      # 期望：94 个测试通过
+mvn test                      # 期望：94 个单元测试通过
+mvn verify                    # 单元测试 + 5 个 Testcontainers 集成测试
 
 # 3. 启动后端
 mvn spring-boot:run
