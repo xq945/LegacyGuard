@@ -35,6 +35,20 @@ public interface DigitalAssetMapper extends BaseMapper<DigitalAsset> {
     List<DigitalAsset> selectForUpdate(@Param("ids") List<Long> ids);
 
     /**
+     * 列出某用户名下未删除的资产。
+     *
+     * <p>仅供"可申请资产"查询使用：联系人本身不是所有者，
+     * 不能通过资产列表接口拿到这份清单。返回的是元数据实体，
+     * 调用方必须转成 DTO 后才能对外，不得把实体直接序列化。
+     */
+    @Select("""
+            SELECT * FROM digital_asset
+             WHERE owner_id = #{ownerId} AND deleted_at IS NULL
+             ORDER BY updated_at DESC, id DESC
+            """)
+    List<DigitalAsset> selectByOwner(@Param("ownerId") Long ownerId);
+
+    /**
      * 统计某用户当前有效资产数量，用于配额检查。
      */
     @Select("""

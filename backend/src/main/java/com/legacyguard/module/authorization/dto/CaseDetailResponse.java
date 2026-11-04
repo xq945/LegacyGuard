@@ -38,6 +38,9 @@ public record CaseDetailResponse(
         @Schema(description = "案件覆盖的资产 ID")
         List<Long> assetIds,
 
+        @Schema(description = "案件覆盖的资产元数据，供申请人也看到资产名称")
+        List<CaseAssetItem> assets,
+
         @Schema(description = "等待期截止时间")
         LocalDateTime waitPeriodEndAt,
 

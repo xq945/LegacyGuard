@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { assetApi, caseApi } from '@/api'
-import type { Asset, CaseDetail } from '@/api/types'
+import type { CaseAssetItem, CaseDetail } from '@/api/types'
 import { APPROVAL_ACTION_LABEL, caseLabel, caseType, fmtTime } from '@/utils/labels'
 
 const route = useRoute()
@@ -12,7 +12,8 @@ const router = useRouter()
 const caseId = computed(() => Number(route.params.id))
 const loading = ref(false)
 const detail = ref<CaseDetail | null>(null)
-const assets = ref<Asset[]>([])
+/** 资产元数据由案件详情直接返回：申请人不是所有者，资产列表接口拿不到这份清单 */
+const assets = computed(() => detail.value?.assets ?? [])
 const contentDialog = ref(false)
 const contentTitle = ref('')
 const contentText = ref('')
@@ -22,10 +23,6 @@ async function load() {
   loading.value = true
   try {
     detail.value = await caseApi.detail(caseId.value)
-    if (detail.value.assetIds.length) {
-      const result = await assetApi.list(1, 100)
-      assets.value = result.records.filter((a) => detail.value!.assetIds.includes(a.id))
-    }
   } finally {
     loading.value = false
   }
@@ -102,7 +99,11 @@ async function revoke() {
  * 这个按钮只在该案件"已授权"且当前用户是申请人时才有意义；
  * 但即便界面上不显示，后端依然会独立校验权限 —— 前端判断只是体验层。
  */
-async function viewAsset(asset: Asset) {
+async function viewAsset(asset: CaseAssetItem) {
+  if (asset.deleted) {
+    ElMessage.warning('该资产已被所有者删除，无法读取')
+    return
+  }
   contentLoading.value = true
   contentDialog.value = true
   contentTitle.value = asset.name
@@ -197,11 +198,18 @@ onMounted(load)
             <template #header><span>涉及的资产</span></template>
             <el-empty v-if="!assets.length" description="无" :image-size="60" />
             <el-table v-else :data="assets" size="small">
-              <el-table-column prop="name" label="名称" />
+              <el-table-column label="名称">
+                <template #default="{ row }">
+                  {{ row.name }}
+                  <el-tag v-if="row.deleted" type="info" size="small" style="margin-left: 6px">
+                    已删除
+                  </el-tag>
+                </template>
+              </el-table-column>
               <el-table-column label="操作" width="110">
                 <template #default="{ row }">
                   <el-button
-                    v-if="detail.status === 'AUTHORIZED'"
+                    v-if="detail.status === 'AUTHORIZED' && !row.deleted"
                     text
                     type="primary"
                     size="small"
@@ -209,7 +217,7 @@ onMounted(load)
                   >
                     查看内容
                   </el-button>
-                  <span v-else class="muted">未授权</span>
+                  <span v-else class="muted">{{ row.deleted ? '已删除' : '未授权' }}</span>
                 </template>
               </el-table-column>
             </el-table>

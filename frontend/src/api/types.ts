@@ -114,11 +114,40 @@ export interface ApprovalItem {
   createdAt: string
 }
 
+export interface CaseAssetItem {
+  id: number
+  name: string
+  assetType: string
+  deleted: boolean
+}
+
 export interface CaseDetail extends CaseSummary {
   assetIds: number[]
+  /** 案件覆盖的资产元数据；申请人与所有者都可见 */
+  assets: CaseAssetItem[]
   closedAt: string | null
   updatedAt: string
   approvals: ApprovalItem[]
+}
+
+/** 发起申请前查询到的可选资产元数据 */
+export interface ApplicableAssetItem {
+  id: number
+  name: string
+  assetType: string
+  description: string | null
+  fileName: string | null
+  fileSize: number | null
+  updatedAt: string
+  occupied: boolean
+}
+
+export interface ApplicableAssets {
+  contactId: number
+  ownerId: number
+  canApply: boolean
+  blockReason: string | null
+  assets: ApplicableAssetItem[]
 }
 
 export interface NotificationItem {

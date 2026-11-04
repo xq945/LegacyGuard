@@ -17,8 +17,10 @@ import com.legacyguard.module.authorization.domain.AuthorizationAsset;
 import com.legacyguard.module.authorization.domain.AuthorizationCase;
 import com.legacyguard.module.authorization.domain.CaseStatus;
 import com.legacyguard.module.authorization.domain.DisputeRecord;
+import com.legacyguard.module.authorization.dto.ApplicableAssetsResponse;
 import com.legacyguard.module.authorization.dto.ApprovalItem;
 import com.legacyguard.module.authorization.dto.ApprovalRequest;
+import com.legacyguard.module.authorization.dto.CaseAssetItem;
 import com.legacyguard.module.authorization.dto.CaseDetailResponse;
 import com.legacyguard.module.authorization.dto.CaseResponse;
 import com.legacyguard.module.authorization.dto.CreateCaseRequest;
@@ -47,10 +49,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * 授权案件状态机。
@@ -227,6 +231,59 @@ public class AuthorizationCaseService implements HeartbeatRecoveryHook {
                 entity.getCaseNo(), ownerId, actor.userId(), assetIds.size());
 
         return toDetail(entity, actor);
+    }
+
+    // ==================================================================
+    // 申请前查询
+    // ==================================================================
+
+    /**
+     * 查询某条联系人关系当前能否发起申请，以及该所有者名下有哪些资产可选。
+     *
+     * <p>这个方法的职责是"让前端对话框有数据可渲染"，不是权限判定。
+     * 真正的五道校验仍在 {@link #create} 里，且创建时会重新读库 ——
+     * 这里返回的结论只用于提前解释，不能当作放行依据。
+     *
+     * <p>不可申请时返回空资产列表：没有资格就不需要看到清单。
+     */
+    public ApplicableAssetsResponse applicableAssets(AuthPrincipal actor, Long contactId) {
+        TrustedContact contact = contactMapper.selectById(contactId);
+        if (contact == null || !contact.getContactUserId().equals(actor.userId())) {
+            // 不是自己的关系就当作不存在，不泄露别人关系的存在性
+            throw BizException.notFound("联系人关系");
+        }
+
+        Long ownerId = contact.getOwnerId();
+        if (!ContactStatus.ACTIVE.equals(contact.getStatus())) {
+            return new ApplicableAssetsResponse(contactId, ownerId, false,
+                    "该联系人关系尚未生效或已失效，无法发起申请", List.of());
+        }
+
+        HeartbeatConfig heartbeat = heartbeatMapper.selectById(ownerId);
+        if (heartbeat == null || !HeartbeatStatus.allowsAuthorizationApplication(heartbeat.getStatus())) {
+            return new ApplicableAssetsResponse(contactId, ownerId, false,
+                    "资产所有者尚未完成失联核验，暂不能发起授权申请", List.of());
+        }
+
+        if (caseMapper.countOpenByOwnerAndContact(ownerId, contactId) > 0) {
+            return new ApplicableAssetsResponse(contactId, ownerId, false,
+                    "你与该用户之间已有未结束的授权案件", List.of());
+        }
+
+        Set<Long> occupied = Set.copyOf(caseAssetMapper.selectOccupiedAssetIds(ownerId));
+        List<ApplicableAssetsResponse.ApplicableAssetItem> assets = assetMapper.selectByOwner(ownerId).stream()
+                .map(asset -> new ApplicableAssetsResponse.ApplicableAssetItem(
+                        asset.getId(),
+                        asset.getName(),
+                        asset.getAssetType(),
+                        asset.getDescription(),
+                        asset.getFileName(),
+                        asset.getFileSize(),
+                        asset.getUpdatedAt(),
+                        occupied.contains(asset.getId())))
+                .toList();
+
+        return new ApplicableAssetsResponse(contactId, ownerId, true, null, assets);
     }
 
     // ==================================================================
@@ -785,6 +842,7 @@ public class AuthorizationCaseService implements HeartbeatRecoveryHook {
 
     private CaseDetailResponse toDetail(AuthorizationCase entity, AuthPrincipal actor) {
         List<Long> assetIds = caseAssetMapper.selectAssetIds(entity.getId());
+        List<CaseAssetItem> caseAssets = loadCaseAssets(assetIds);
         List<ApprovalItem> approvals = approvalMapper.selectByCase(entity.getId()).stream()
                 .map(ApprovalItem::from)
                 .toList();
@@ -800,6 +858,7 @@ public class AuthorizationCaseService implements HeartbeatRecoveryHook {
                 entity.getReason(),
                 entity.getReviewComment(),
                 assetIds,
+                caseAssets,
                 entity.getWaitPeriodEndAt(),
                 entity.getAuthorizedAt(),
                 entity.getRevokedAt(),
@@ -810,6 +869,29 @@ public class AuthorizationCaseService implements HeartbeatRecoveryHook {
                 entity.getOwnerId().equals(actor.userId()),
                 applicantId != null && applicantId.equals(actor.userId())
         );
+    }
+
+    /**
+     * 按案件内的资产 ID 顺序加载元数据。
+     *
+     * <p>申请人不是资产所有者，资产列表接口只返回"自己的"资产，
+     * 客户端拼不出这份清单，所以由案件详情直接返回。
+     * 已软删除的资产仍返回名称并标记 {@code deleted}，让历史案件保持可读。
+     */
+    private List<CaseAssetItem> loadCaseAssets(List<Long> assetIds) {
+        if (assetIds.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, DigitalAsset> byId = new HashMap<>();
+        for (DigitalAsset asset : assetMapper.selectBatchIds(assetIds)) {
+            byId.put(asset.getId(), asset);
+        }
+        return assetIds.stream()
+                .map(byId::get)
+                .filter(Objects::nonNull)
+                .map(asset -> new CaseAssetItem(asset.getId(), asset.getName(),
+                        asset.getAssetType(), asset.isDeleted()))
+                .toList();
     }
 
     /** 供其他模块（如通知）查询用的只读入口 */

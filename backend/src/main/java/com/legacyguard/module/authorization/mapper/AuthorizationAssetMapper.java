@@ -37,6 +37,22 @@ public interface AuthorizationAssetMapper extends BaseMapper<AuthorizationAsset>
     int countActiveCasesCovering(@Param("assetIds") List<Long> assetIds);
 
     /**
+     * 列出某所有者名下已被未终结案件占用的资产 ID。
+     *
+     * <p>同一个资产同时只能被一个有效案件覆盖；这些资产在申请对话框里
+     * 应当显示为不可选，而不是等用户提交后再报 422。
+     */
+    @Select("""
+            SELECT DISTINCT aa.asset_id
+              FROM authorization_asset aa
+              JOIN authorization_case c ON c.id = aa.case_id
+              JOIN digital_asset d ON d.id = aa.asset_id
+             WHERE d.owner_id = #{ownerId}
+               AND c.status NOT IN ('REJECTED', 'CANCELLED', 'REVOKED')
+            """)
+    List<Long> selectOccupiedAssetIds(@Param("ownerId") Long ownerId);
+
+    /**
      * 查询某个案件覆盖的资产及其名称，供详情页展示。
      */
     @Select("""

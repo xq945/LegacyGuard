@@ -138,7 +138,10 @@ onMounted(load)
             {{ detail.reason || '—' }}
           </el-descriptions-item>
           <el-descriptions-item label="覆盖资产数">{{ detail.assetIds.length }}</el-descriptions-item>
-          <el-descriptions-item label="资产 ID 列表">
+          <el-descriptions-item label="资产名称">
+            {{ detail.assets.map((item) => item.name).join('、') || '—' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="资产 ID 列表" :span="2">
             <span class="mono">{{ detail.assetIds.join(', ') || '—' }}</span>
           </el-descriptions-item>
           <el-descriptions-item v-if="detail.waitPeriodEndAt" label="等待期截止">

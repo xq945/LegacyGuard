@@ -1,5 +1,6 @@
 import http, { request, type PageResult } from './http'
 import type {
+  ApplicableAssets,
   Asset,
   AssetContent,
   AuditLog,
@@ -123,6 +124,13 @@ export const heartbeatApi = {
 // ==================== 授权案件 ====================
 
 export const caseApi = {
+  /** 申请前查询：这条关系能否申请、该所有者有哪些资产可选 */
+  applicableAssets(contactId: number) {
+    return request<ApplicableAssets>(
+      http.get('/authorizations/applicable-assets', { params: { contactId } })
+    )
+  },
+
   create(body: { contactId: number; assetIds: number[]; reason?: string }) {
     return request<CaseDetail>(http.post('/authorizations', body))
   },

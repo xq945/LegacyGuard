@@ -2,6 +2,7 @@ package com.legacyguard.module.authorization.controller;
 
 import com.legacyguard.common.api.ApiResponse;
 import com.legacyguard.common.api.PageResult;
+import com.legacyguard.module.authorization.dto.ApplicableAssetsResponse;
 import com.legacyguard.module.authorization.dto.CancelCaseRequest;
 import com.legacyguard.module.authorization.dto.CaseDetailResponse;
 import com.legacyguard.module.authorization.dto.CaseResponse;
@@ -14,6 +15,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
@@ -58,6 +60,19 @@ public class AuthorizationController {
 
         CaseDetailResponse created = caseService.create(CurrentUser.get(), request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(created));
+    }
+
+    @GetMapping("/applicable-assets")
+    @Operation(summary = "可申请资产与资格", description = """
+            发起申请前查询：这条联系人关系当前能否申请、该所有者名下有哪些资产可选。
+
+            只返回资产元数据，不返回内容或密文；不可申请时资产列表为空并给出原因。
+            真正的五道校验在创建接口里重新执行，这里的结论仅用于界面展示。
+            """)
+    public ApiResponse<ApplicableAssetsResponse> applicableAssets(
+            @RequestParam @NotNull(message = "联系人关系 ID 不能为空") Long contactId) {
+
+        return ApiResponse.success(caseService.applicableAssets(CurrentUser.get(), contactId));
     }
 
     @GetMapping

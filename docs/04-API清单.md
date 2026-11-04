@@ -157,8 +157,9 @@ UPDATE authorization_case
 | 接口 | 权限 | 关键校验 | 事务边界 | 幂等 |
 | --- | --- | --- | --- | --- |
 | `POST /api/authorizations` | 联系人（ACTIVE） | ①关系 ACTIVE ②owner 心跳 REVIEWING ③资产归属 ④资产未被有效案件占用（`FOR UPDATE`）⑤无同 pair 有效案件 | case + case_asset + audit + outbox | `uk_active_case` 唯一索引 |
+| `GET /api/authorizations/applicable-assets?contactId=` | 关系所属联系人 | 关系属于自己；ACTIVE + owner REVIEWING + 无未终结案件时才返回资产元数据（含占用标记） | 只读 | 否 |
 | `GET /api/authorizations` | USER | 按角色过滤：owner 看别人对自己的申请，contact 看自己发的 | 只读 | 是 |
-| `GET /api/authorizations/{id}` | 案件相关方 / ADMIN | 只有 owner、applicant 的 contact、管理员可读 | 只读 | 是 |
+| `GET /api/authorizations/{id}` | 案件相关方 / ADMIN | 只有 owner、applicant 的 contact、管理员可读；返回资产元数据（名称/类型），不含内容 | 只读 | 是 |
 | `POST /api/authorizations/{id}/submit` | 申请联系人 | `status=DRAFT` | update + audit + outbox | 条件更新 |
 | `POST /api/authorizations/{id}/cancel` | owner / 申请联系人 | `status IN (DRAFT, PENDING_REVIEW, REVIEWING, WAITING_PERIOD)` | update + audit + outbox | 条件更新 |
 | `POST /api/authorizations/{id}/disputes` | owner / 该联系人 | `status=WAITING_PERIOD` | `UPDATE case → DISPUTED` + `INSERT dispute` + audit + outbox | 唯一约束 `(case_id, status='OPEN')` 由应用校验 |

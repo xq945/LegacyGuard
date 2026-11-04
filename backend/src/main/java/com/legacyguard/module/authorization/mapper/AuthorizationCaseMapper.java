@@ -170,6 +170,23 @@ public interface AuthorizationCaseMapper extends BaseMapper<AuthorizationCase> {
     int cancelAllPendingByOwner(@Param("ownerId") Long ownerId, @Param("now") LocalDateTime now);
 
     /**
+     * 统计同一对 owner/contact 之间未终结的案件数。
+     *
+     * <p>与唯一索引 {@code uk_active_case} 的条件一致：
+     * 只有 REJECTED / CANCELLED / REVOKED 算终结。
+     * 用于在申请对话框里提前解释"为什么现在不能申请"，
+     * 而不是让用户填完表单再撞 409。
+     */
+    @Select("""
+            SELECT COUNT(*) FROM authorization_case
+             WHERE owner_id = #{ownerId}
+               AND contact_id = #{contactId}
+               AND status NOT IN ('REJECTED', 'CANCELLED', 'REVOKED')
+            """)
+    int countOpenByOwnerAndContact(@Param("ownerId") Long ownerId,
+                                   @Param("contactId") Long contactId);
+
+    /**
      * 等待期已到却被遗漏的案件（定时任务扫描用）。
      *
      * <p>走 {@code idx_wait_deadline (status, wait_period_end_at)} 索引。
